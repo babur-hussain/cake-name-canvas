@@ -1,14 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Cake } from "lucide-react";
+import { Loader2, Cake, Download, Share2 } from "lucide-react";
+import { CakeStyleSelector, CakeStyle } from "@/components/CakeStyleSelector";
+import { CakeGallery } from "@/components/CakeGallery";
+import { AboutSection } from "@/components/AboutSection";
+
+interface CakeItem {
+  id: string;
+  name: string;
+  image: string;
+  style: string;
+  timestamp: number;
+}
 
 const Index = () => {
   const [name, setName] = useState("");
+  const [cakeStyle, setCakeStyle] = useState<CakeStyle>("birthday");
   const [isLoading, setIsLoading] = useState(false);
   const [cakeImage, setCakeImage] = useState<string | null>(null);
+  const [cakeGallery, setCakeGallery] = useState<CakeItem[]>([]);
   const { toast } = useToast();
+
+  // Load gallery from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("cakeGallery");
+    if (stored) {
+      try {
+        setCakeGallery(JSON.parse(stored));
+      } catch (error) {
+        console.error("Failed to load gallery:", error);
+      }
+    }
+  }, []);
+
+  // Save gallery to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("cakeGallery", JSON.stringify(cakeGallery));
+  }, [cakeGallery]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +61,10 @@ const Index = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ 
+          name: name.trim(),
+          style: cakeStyle 
+        }),
       });
 
       if (!response.ok) {
@@ -40,15 +73,29 @@ const Index = () => {
 
       const data = await response.json();
       
-      // Assuming the webhook returns an object with an image URL or base64 string
-      // Adjust this based on your actual webhook response format
+      // Extract image from response (adjust based on your webhook's response format)
+      let imageUrl: string | null = null;
       if (data.image) {
-        setCakeImage(data.image);
+        imageUrl = data.image;
       } else if (data.url) {
-        setCakeImage(data.url);
+        imageUrl = data.url;
+      } else if (typeof data === 'string') {
+        imageUrl = data;
       } else {
         throw new Error("No image in response");
       }
+
+      setCakeImage(imageUrl);
+
+      // Add to gallery
+      const newCake: CakeItem = {
+        id: Date.now().toString(),
+        name: name.trim(),
+        image: imageUrl,
+        style: cakeStyle,
+        timestamp: Date.now(),
+      };
+      setCakeGallery((prev) => [newCake, ...prev]);
 
       toast({
         title: "Your cake is ready! 🎂",
@@ -66,15 +113,74 @@ const Index = () => {
     }
   };
 
+  const handleDownload = async () => {
+    if (!cakeImage) return;
+
+    try {
+      const response = await fetch(cakeImage);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${name}-cake.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Downloaded! 🎉",
+        description: "Your cake image has been saved.",
+      });
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description: "Could not download the image. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleShare = async () => {
+    const shareText = `Check out my custom ${cakeStyle} cake with "${name}" on it! 🎂`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "My Custom Cake",
+          text: shareText,
+          url: window.location.href,
+        });
+      } catch (error) {
+        // User cancelled share
+      }
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText(shareText + " " + window.location.href);
+      toast({
+        title: "Copied to clipboard!",
+        description: "Share text has been copied. Paste it anywhere!",
+      });
+    }
+  };
+
+  const handleRemoveFromGallery = (id: string) => {
+    setCakeGallery((prev) => prev.filter((cake) => cake.id !== id));
+    toast({
+      title: "Removed from gallery",
+      description: "The cake has been removed from your collection.",
+    });
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen p-6 relative overflow-hidden">
       {/* Decorative background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="w-full max-w-2xl relative z-10">
+      <div className="w-full max-w-6xl mx-auto relative z-10 py-12">
         {/* Header */}
         <div className="text-center mb-12 animate-fade-in">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-primary to-accent mb-6 animate-pulse-glow">
@@ -87,6 +193,9 @@ const Index = () => {
             Enter your name and watch as we create your personalized cake design
           </p>
         </div>
+
+        {/* Cake Style Selector */}
+        <CakeStyleSelector value={cakeStyle} onChange={setCakeStyle} />
 
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="mb-12 animate-scale-in">
@@ -126,14 +235,14 @@ const Index = () => {
               </div>
             </div>
             <p className="mt-8 text-xl text-muted-foreground animate-pulse">
-              Creating your custom cake...
+              Creating your custom {cakeStyle} cake...
             </p>
           </div>
         )}
 
         {/* Cake Image Display */}
         {cakeImage && !isLoading && (
-          <div className="animate-scale-in">
+          <div className="animate-scale-in mb-12">
             <div className="rounded-2xl overflow-hidden border border-border shadow-elegant bg-card/30 backdrop-blur-sm p-4">
               <img
                 src={cakeImage}
@@ -141,14 +250,29 @@ const Index = () => {
                 className="w-full h-auto rounded-lg"
               />
             </div>
-            <div className="text-center mt-6">
+            <div className="flex flex-wrap gap-3 justify-center mt-6">
+              <Button
+                onClick={handleDownload}
+                className="bg-gradient-to-r from-primary to-accent hover:opacity-90 glow"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Image
+              </Button>
+              <Button
+                onClick={handleShare}
+                variant="outline"
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                <Share2 className="w-4 h-4 mr-2" />
+                Share Cake
+              </Button>
               <Button
                 onClick={() => {
                   setName("");
                   setCakeImage(null);
                 }}
                 variant="outline"
-                className="border-primary/50 hover:bg-primary/10"
+                className="border-accent/50 hover:bg-accent/10"
               >
                 Create Another Cake
               </Button>
@@ -157,13 +281,19 @@ const Index = () => {
         )}
 
         {/* Initial State Message */}
-        {!cakeImage && !isLoading && (
+        {!cakeImage && !isLoading && cakeGallery.length === 0 && (
           <div className="text-center py-16 animate-fade-in">
             <p className="text-muted-foreground text-lg">
-              ✨ Enter a name above to get started
+              ✨ Choose a style and enter a name to get started
             </p>
           </div>
         )}
+
+        {/* Cake Gallery */}
+        <CakeGallery cakes={cakeGallery} onRemove={handleRemoveFromGallery} />
+
+        {/* About Section */}
+        <AboutSection />
       </div>
     </div>
   );
