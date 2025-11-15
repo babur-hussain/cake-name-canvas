@@ -2,12 +2,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Cake, Download, Share2, AlertCircle } from "lucide-react";
+import { Loader2, Cake, Download, Share2 } from "lucide-react";
 import { CakeStyleSelector, CakeStyle } from "@/components/CakeStyleSelector";
 import { CakeGallery } from "@/components/CakeGallery";
 import { AboutSection } from "@/components/AboutSection";
-import { WEBHOOK_URL, USE_MOCK_DATA } from "@/config/webhook";
-import { generateMockCake } from "@/utils/mockCakeData";
 
 interface CakeItem {
   id: string;
@@ -58,59 +56,33 @@ const Index = () => {
     setCakeImage(null);
 
     try {
-      let imageUrl: string | null = null;
+      const response = await fetch("http://localhost:5678/webhook/26fc2779-409a-4101-9b53-b429b7e22248", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          name: name.trim(),
+          style: cakeStyle 
+        }),
+      });
 
-      if (USE_MOCK_DATA) {
-        // Use mock data for testing
-        console.log("Using mock data for testing");
-        imageUrl = await generateMockCake(name.trim(), cakeStyle);
-      } else {
-        // Call the actual webhook
-        console.log("Calling webhook:", WEBHOOK_URL);
-        console.log("Request payload:", { name: name.trim(), style: cakeStyle });
-
-        const response = await fetch(WEBHOOK_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ 
-            name: name.trim(),
-            style: cakeStyle 
-          }),
-        });
-
-        console.log("Response status:", response.status);
-        console.log("Response headers:", response.headers);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error("Response error:", errorText);
-          throw new Error(`Webhook returned status ${response.status}: ${errorText}`);
-        }
-
-        const data = await response.json();
-        console.log("Response data:", data);
-        
-        // Extract image from response (adjust based on your webhook's response format)
-        if (data.image) {
-          imageUrl = data.image;
-        } else if (data.url) {
-          imageUrl = data.url;
-        } else if (data.imageUrl) {
-          imageUrl = data.imageUrl;
-        } else if (data.output) {
-          imageUrl = data.output;
-        } else if (typeof data === 'string') {
-          imageUrl = data;
-        } else {
-          console.error("Unknown response format:", data);
-          throw new Error("No image found in response. Check console for response structure.");
-        }
+      if (!response.ok) {
+        throw new Error("Failed to generate cake");
       }
 
-      if (!imageUrl) {
-        throw new Error("No image URL received");
+      const data = await response.json();
+      
+      // Extract image from response (adjust based on your webhook's response format)
+      let imageUrl: string | null = null;
+      if (data.image) {
+        imageUrl = data.image;
+      } else if (data.url) {
+        imageUrl = data.url;
+      } else if (typeof data === 'string') {
+        imageUrl = data;
+      } else {
+        throw new Error("No image in response");
       }
 
       setCakeImage(imageUrl);
@@ -130,19 +102,10 @@ const Index = () => {
         description: "Enjoy your personalized cake design!",
       });
     } catch (error) {
-      console.error("Full error details:", error);
-      
-      let errorMessage = "We couldn't bake your cake. Please try again.";
-      
-      if (error instanceof TypeError && error.message === "Failed to fetch") {
-        errorMessage = "Cannot connect to webhook. Make sure you're using ngrok or a public URL, not localhost.";
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
+      console.error("Error:", error);
       toast({
         title: "Oops! Something went wrong",
-        description: errorMessage,
+        description: "We couldn't bake your cake. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -229,19 +192,6 @@ const Index = () => {
           <p className="text-lg text-muted-foreground">
             Enter your name and watch as we create your personalized cake design
           </p>
-          
-          {/* Webhook Status Warning */}
-          {WEBHOOK_URL.includes("localhost") && (
-            <div className="mt-6 max-w-2xl mx-auto p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-              <div className="text-left text-sm">
-                <p className="font-semibold text-destructive mb-1">Webhook Configuration Needed</p>
-                <p className="text-muted-foreground">
-                  Your webhook is set to localhost. Please update <code className="bg-muted px-1 py-0.5 rounded">src/config/webhook.ts</code> with your ngrok URL or enable mock data for testing.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Cake Style Selector */}
